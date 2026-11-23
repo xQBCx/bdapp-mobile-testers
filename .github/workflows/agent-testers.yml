@@ -65,6 +65,7 @@ permissions:
   contents: read
   actions: read
   issues: read   # bug_report: read the issue to reproduce
+  id-token: write   # OIDC: assume the Bedrock testers role (repo variable AWS_TESTERS_ROLE_ARN); no long-lived AWS keys
 
 jobs:
   plan:
@@ -224,11 +225,34 @@ jobs:
           GH_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN || github.token }}
         run: bash scripts/bug_report.sh
 
+      - name: AWS credentials (Bedrock via GitHub OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TESTERS_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Resolve Bedrock model id
+        id: bedrock-model
+        env: { MODEL_IN: "${{ inputs.model }}" }
+        run: |
+          case "$MODEL_IN" in
+            sonnet) echo "model=us.anthropic.claude-sonnet-4-6" >> "$GITHUB_OUTPUT" ;;
+            haiku)  echo "model=us.anthropic.claude-haiku-4-5-20251001-v1:0" >> "$GITHUB_OUTPUT" ;;
+            *)      echo "model=$MODEL_IN" >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - name: Emulator + agent
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Own-stack routing (Biz Dev App patch): Claude Code runs on Bedrock
+          # via the OIDC role above. No Anthropic API key, no subscription token.
+          CLAUDE_CODE_USE_BEDROCK: "1"
+          AWS_REGION: us-east-2
+          AWS_DEFAULT_REGION: us-east-2
+          ANTHROPIC_MODEL: ${{ steps.bedrock-model.outputs.model }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: us.anthropic.claude-sonnet-4-6
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: us.anthropic.claude-haiku-4-5-20251001-v1:0
+          CLAUDE_CODE_SUBAGENT_MODEL: ${{ steps.bedrock-model.outputs.model }}
           PERSONA: ${{ matrix.persona }}
           DEVICE: ${{ matrix.device }}
           FONT_SCALE: ${{ matrix.font_scale }}
@@ -237,7 +261,7 @@ jobs:
           GEO: ${{ matrix.geo }}
           APP_ID: ${{ inputs.app_id }}
           BRIEF: ${{ inputs.bug_report != '' && inputs.brief == 'AGENT_BRIEF.md' && 'briefs/reproduce.md' || inputs.brief }}
-          MODEL: ${{ inputs.model }}
+          MODEL: ${{ steps.bedrock-model.outputs.model }}
           LLM_BASE_URL: ${{ inputs.llm_base_url }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           BLOCK_HOSTS: ${{ inputs.block_hosts }}
@@ -330,10 +354,33 @@ jobs:
           GH_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN || github.token }}
         run: bash scripts/bug_report.sh
 
+      - name: AWS credentials (Bedrock via GitHub OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TESTERS_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Resolve Bedrock model id
+        id: bedrock-model
+        env: { MODEL_IN: "${{ inputs.model }}" }
+        run: |
+          case "$MODEL_IN" in
+            sonnet) echo "model=us.anthropic.claude-sonnet-4-6" >> "$GITHUB_OUTPUT" ;;
+            haiku)  echo "model=us.anthropic.claude-haiku-4-5-20251001-v1:0" >> "$GITHUB_OUTPUT" ;;
+            *)      echo "model=$MODEL_IN" >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - name: Agent
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Own-stack routing (Biz Dev App patch): Claude Code runs on Bedrock
+          # via the OIDC role above. No Anthropic API key, no subscription token.
+          CLAUDE_CODE_USE_BEDROCK: "1"
+          AWS_REGION: us-east-2
+          AWS_DEFAULT_REGION: us-east-2
+          ANTHROPIC_MODEL: ${{ steps.bedrock-model.outputs.model }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: us.anthropic.claude-sonnet-4-6
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: us.anthropic.claude-haiku-4-5-20251001-v1:0
+          CLAUDE_CODE_SUBAGENT_MODEL: ${{ steps.bedrock-model.outputs.model }}
           PERSONA: ${{ matrix.persona }}
           TEXT_SIZE: ${{ matrix.text_size }}
           THEME: ${{ matrix.theme }}
@@ -341,7 +388,7 @@ jobs:
           GEO: ${{ matrix.geo }}
           APP_ID: ${{ inputs.app_id }}
           BRIEF: ${{ inputs.bug_report != '' && inputs.brief == 'AGENT_BRIEF.md' && 'briefs/reproduce.md' || inputs.brief }}
-          MODEL: ${{ inputs.model }}
+          MODEL: ${{ steps.bedrock-model.outputs.model }}
           LLM_BASE_URL: ${{ inputs.llm_base_url }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           BLOCK_HOSTS: ${{ inputs.block_hosts }}
